@@ -7,7 +7,7 @@ variable "aws_region" {
 variable "vpc_id" {
   description = "ID istniejącego VPC np. vpc-12345678"
   type        = string
-  default     = "vpc-06396a3664c72af69" 
+  default     = "" 
 }
 
 variable "bridge_subnet_cidr" {
@@ -31,13 +31,13 @@ variable "bridge_ami" {
 variable "key_name" {
   description = "Nazwa klucza SSH dla instancji EC2"
   type        = string
-  default     = "bridge-key"  
+  default     = ""  
 }
 
 variable "rds_security_group_id" {
   description = "ID security group dla RDS, którą należy zmodyfikować np. sg-12345678"
   type        = string
-  default     = "sg-0d7cd9b6554693572" 
+  default     = "" 
 }
 
 variable "db_engine" {
@@ -50,5 +50,5 @@ variable "db_engine" {
 variable "my_ip" {
   description = "Mój adres IP do dostępu SSH, np. 123.123.123.123/32"
   type        = string
-  default     = "81.162.210.154/32"  
+  default     = ""  
 }
