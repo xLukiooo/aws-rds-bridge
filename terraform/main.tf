@@ -1,18 +1,33 @@
-provider "aws" {
-  region = var.aws_region
-  profile = "default"
-}
+# Dynamiczne wyszukiwanie oficjalnego obrazu Amazon Linux 2023 (architektura x86_64)
+data "aws_ami" "amazon_linux_2023" {
+  most_recent = true
+  owners      = ["amazon"]
 
-# Internet Gateway dla VPC (jeśli nie został jeszcze utworzony)
-resource "aws_internet_gateway" "igw" {
-  vpc_id = var.vpc_id
+  filter {
+    name   = "name"
+    values = ["al2023-ami-*-x86_64"]
+  }
 
-  tags = {
-    Name = "bridge-igw"
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+
+  filter {
+    name   = "root-device-type"
+    values = ["ebs"]
   }
 }
 
-# Nowy publiczny subnet w istniejącym VPC
+# Pobranie bramy internetowej (Internet Gateway), która już istnieje w VPC
+data "aws_internet_gateway" "existing" {
+  filter {
+    name   = "attachment.vpc-id"
+    values = [var.vpc_id]
+  }
+}
+
+# Dedykowany subnet dla instancji bridge
 resource "aws_subnet" "bridge_subnet" {
   vpc_id                  = var.vpc_id
   cidr_block              = var.bridge_subnet_cidr
@@ -20,87 +35,48 @@ resource "aws_subnet" "bridge_subnet" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "bridge-subnet"
+    Name = "${var.name_prefix}-subnet"
   }
 }
 
-# Route Table dla publicznego subnetu
+# Tabela routingu kierująca ruch zewnętrzny przez Internet Gateway
 resource "aws_route_table" "public_rt" {
   vpc_id = var.vpc_id
 
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
+    gateway_id = data.aws_internet_gateway.existing.id
   }
 
   tags = {
-    Name = "bridge-public-rt"
+    Name = "${var.name_prefix}-rt"
   }
 }
 
-# Powiązanie Route Table z naszym subnetem
+# Skojarzenie tabeli routingu z podsiecią bridge
 resource "aws_route_table_association" "bridge_assoc" {
   subnet_id      = aws_subnet.bridge_subnet.id
   route_table_id = aws_route_table.public_rt.id
 }
 
-# Security Group dla instancji bridge (EC2)
-resource "aws_security_group" "bridge_sg" {
-  name        = "bridge-sg"
-  description = "Security Group dla instancji bridge (EC2)"
-  vpc_id      = var.vpc_id
-
-  ingress {
-    description = "Allow SSH"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.my_ip]   
-  }
-
-  egress {
-    description = "Allow all outbound"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "bridge-sg"
-  }
-}
-
-# Tworzymy instancję EC2 (bridge) w celu łączenia się z RDS
+# Instancja EC2 pełniąca rolę mostu SSM (Zero-Trust Bridge)
 resource "aws_instance" "bridge_ec2" {
-  ami                    = var.bridge_ami
-  instance_type          = "t2.micro"
-  subnet_id              = aws_subnet.bridge_subnet.id
+  ami                  = data.aws_ami.amazon_linux_2023.id
+  instance_type        = var.instance_type
+  subnet_id            = aws_subnet.bridge_subnet.id
+  iam_instance_profile = aws_iam_instance_profile.bridge_profile.name
+
   vpc_security_group_ids = [aws_security_group.bridge_sg.id]
-  key_name               = var.key_name
 
   root_block_device {
-    volume_size = 8      
-    volume_type = "gp3"  
+    volume_size = 8
+    volume_type = "gp3"
   }
-/*
-  user_data = templatefile("${path.module}/bootstrap.sh", {
-    db_engine = var.db_engine
-  })
-*/
-  tags = {
-    Name = "rds-bridge-instance"
-  }
-}
 
-# Modyfikacja istniejącej Security Group RDS
-# Dodajemy regułę, która pozwala na ruch z instancji bridge (SG) na port 3306
-resource "aws_security_group_rule" "rds_ingress_from_bridge" {
-  type                     = "ingress"
-  from_port                = 3306
-  to_port                  = 3306
-  protocol                 = "tcp"
-  security_group_id        = var.rds_security_group_id
-  source_security_group_id = aws_security_group.bridge_sg.id
-  description              = "Allow bridge EC2 access to RDS"
+  # Opcjonalny skrypt bootstrapu (klient bazy danych dla sesji SSM)
+  user_data = fileexists("${path.module}/user_data.sh") ? file("${path.module}/user_data.sh") : null
+
+  tags = {
+    Name = "${var.name_prefix}-instance"
+  }
 }

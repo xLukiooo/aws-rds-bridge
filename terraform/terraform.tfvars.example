@@ -1,0 +1,20 @@
+aws_region            = "us-east-1"
+aws_profile           = "default"
+environment           = "dev"
+name_prefix           = "rds-bridge"
+
+# Dane Twojego istniejącego środowiska AWS:
+vpc_id                = "vpc-0123456789abcdef0"
+rds_security_group_id = "sg-0123456789abcdef0"
+rds_endpoint          = "mydb.c123456789.us-east-1.rds.amazonaws.com"
+
+# Konfiguracja sieciowa:
+bridge_subnet_cidr    = "10.0.100.0/24"
+availability_zone     = "us-east-1a"
+
+# Typ instancji EC2 (x86_64):
+instance_type         = "t3.micro"
+
+# Porty:
+db_port               = 3306
+local_port            = 3306
